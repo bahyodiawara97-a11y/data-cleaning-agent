@@ -62,7 +62,7 @@ def metrics(df: pd.DataFrame, title: str):
 
 # ------------------------------------------------------------------ en-tête
 st.title("🧹 AI Data Cleaning Agent")
-APP_VERSION = "1.4"
+APP_VERSION = "1.6"
 st.caption(f"L'agent inspecte, propose un plan, et n'applique rien sans votre validation. · version {APP_VERSION}")
 
 llm = get_llm()
@@ -112,7 +112,8 @@ if state.next and state.next[0] == "human_review":
         if results.get("rejected"):
             with st.expander(f"🛡️ {len(results['rejected'])} proposition(s) de l'IA écartée(s) par le garde-fou"):
                 for a in results["rejected"]:
-                    st.markdown(f"- ~~{describe(a)}~~ : {a['rejected_reason']}")
+                    label = "Proposition illisible" if a.get("_raw") else describe(a)
+                    st.markdown(f"- ~~{label}~~ : {a['rejected_reason']}")
         st.caption("Décochez les actions que vous refusez.")
         plan = state.values["plan"]
         if all(a["operation"] == "convert_type" for a in plan):

@@ -15,7 +15,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 
-from agent.engine import CleaningPlan, describe, execute_plan, rule_based_plan, validate_plan
+from agent.engine import Action, CleaningPlan, describe, execute_plan, rule_based_plan, validate_plan
 from agent.tools import build_tools, overview
 
 MAX_TOOL_ROUNDS = 6
@@ -53,6 +53,29 @@ class State(TypedDict):
     plan: list
     approved: list
     mode: str
+
+
+JSON_FORMAT = (
+    'Réponds UNIQUEMENT avec un objet JSON de la forme {"actions": [{"operation": "...", "column": "...", '
+    '"case": null, "target_type": null, "strategy": null, "value": null, "reason": "..."}]}. '
+    "Mets null pour les champs inutiles. Aucun texte avant ou après le JSON.")
+
+
+def parse_actions(text: str):
+    """Lit le JSON du LLM et valide chaque action séparément. Renvoie (valides, rejetées)."""
+    text = (text or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    data = json.loads(text[start:end + 1] if start != -1 else text)
+    items = data.get("actions", []) if isinstance(data, dict) else data
+    good, bad = [], []
+    for item in items if isinstance(items, list) else []:
+        try:
+            good.append(Action.model_validate(item).model_dump())
+        except Exception:
+            label = item.get("operation", "?") if isinstance(item, dict) else str(item)[:40]
+            bad.append({"operation": "drop_duplicates", "column": None, "reason": "",
+                        "rejected_reason": f"action mal formée ignorée ({label})", "_raw": True})
+    return good, bad
 
 
 def merge_plans(llm_actions: list, rule_actions: list) -> list:
@@ -123,20 +146,27 @@ def build_graph(df: pd.DataFrame, llm=None):
                       HumanMessage(f"Colonnes : {list(df.columns)}\n\nRésultats de l'inspection :\n"
                                    f"{findings[:12000]}\n\n{PLAN_PROMPT}")]
             errors = []
-            for method in ("function_calling", "json_mode"):
-                try:
-                    kwargs = {"method": method}
-                    p = prompt if method == "function_calling" else prompt + [HumanMessage(
-                        "Réponds uniquement en JSON : {\"actions\": [{\"operation\": ..., \"column\": ..., "
-                        "\"case\": ..., \"target_type\": ..., \"strategy\": ..., \"value\": ..., \"reason\": ...}]}")]
-                    out = llm.with_structured_output(CleaningPlan, **kwargs).invoke(p)
-                    actions = [a.model_dump() for a in out.actions]
-                    if actions:
-                        actions, rejected = validate_plan(df, actions)  # garde-fou avant affichage
-                        results["rejected"] = rejected
-                        return {"plan": merge_plans(actions, rule_based_plan(df))}
-                except Exception as e:
-                    errors.append(str(e)[:200])
+            # 1) JSON libre, analysé action par action : une action mal formée est écartée sans perdre les autres
+            try:
+                raw = llm.bind(response_format={"type": "json_object"}).invoke(prompt + [HumanMessage(JSON_FORMAT)])
+                actions, bad = parse_actions(raw.content)
+                if actions:
+                    actions, rejected = validate_plan(df, actions)  # garde-fou avant affichage
+                    results["rejected"] = bad + rejected
+                    return {"plan": merge_plans(actions, rule_based_plan(df))}
+                errors.append("JSON sans action valide")
+            except Exception as e:
+                errors.append(f"JSON : {str(e)[:300]}")
+            # 2) secours : sortie structurée par appel d'outil
+            try:
+                out = llm.with_structured_output(CleaningPlan, method="function_calling").invoke(prompt)
+                actions = [x.model_dump() for x in out.actions]
+                if actions:
+                    actions, rejected = validate_plan(df, actions)
+                    results["rejected"] = rejected
+                    return {"plan": merge_plans(actions, rule_based_plan(df))}
+            except Exception as e:
+                errors.append(f"outil : {str(e)[:300]}")
             results["warning"] = f"Le LLM n'a pas pu produire de plan ({' | '.join(errors) if errors else 'plan vide'}). Plan de secours utilisé."
         return {"plan": [dict(a, source="regles") for a in rule_based_plan(df)]}
 

@@ -325,6 +325,9 @@ def validate_plan(df: pd.DataFrame, actions: list):
                         badly = words & ((txt == txt.str.lower()) | (txt == txt.str.upper()))
                         mixed = badly.any() and (words & ~badly).mean() >= 0.3
                         why = None if variants or mixed else "aucune incohérence de casse"
+                        if not why and mixed and not variants and a.get("case") != "title":
+                            # « bob durand » n'a pas de variante bien écrite : most_frequent le laisserait tel quel
+                            a = dict(a, case="title")
                 elif op == "fill_missing":
                     has_out = (("nullify_outliers", col) in planned)
                     why = None if s.isna().any() or has_out else "aucune valeur manquante"
