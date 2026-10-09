@@ -1,57 +1,61 @@
 # 🧹 AI Data Cleaning Agent
 
-Un agent IA qui inspecte un fichier CSV ou Excel, détecte les problèmes de qualité et propose un plan de nettoyage. **Rien n'est appliqué sans votre validation** (human-in-the-loop).
+Un agent IA qui inspecte un fichier **CSV ou Excel**, détecte les problèmes de qualité et propose un plan de nettoyage justifié. **Rien n'est appliqué sans validation humaine** (human-in-the-loop).
 
-## Lancer l'application (3 étapes)
+> Stack : **LangGraph** · **LLM via Groq** · **Python & Pandas** · **Streamlit**
 
-Ouvrez le **Terminal** et tapez ces commandes une par une.
+![Plan de nettoyage proposé par l'agent](demo.png)
 
-**1. Aller dans le dossier du projet**
-```bash
-cd ~/Downloads/data-cleaning-agent
-```
+*Le plan : actions proposées par l'IA, suggestions complémentaires des règles, et propositions écartées par le garde-fou.*
 
-**2. Installer les dépendances** (une seule fois)
-```bash
-conda activate anaconda-nlp
-pip install -r requirements.txt
-```
+## ✨ Ce qui le différencie
 
-**3. Lancer l'application**
-```bash
-streamlit run app.py
-```
-Une page s'ouvre dans votre navigateur (http://localhost:8501). Cliquez sur **« Utiliser le fichier de démo »**, puis **« Analyser avec l'agent »**.
+- **Tool calling** : le LLM choisit lui-même quelles colonnes inspecter (`inspect_column`, `find_duplicates`, `detect_outliers`…).
+- **Exécution sûre** : le LLM ne génère **aucun code**. Il choisit parmi 10 opérations en liste blanche, exécutées par un moteur Pandas contrôlé.
+- **Garde-fou** : chaque proposition de l'IA est vérifiée sur les données avant d'être affichée. Les actions impossibles ou inutiles (colonne inventée, casse déjà cohérente, suppression d'une colonne qui contient des données…) sont écartées, avec la raison affichée.
+- **IA + règles** : un moteur de règles complète ce que l'IA oublie (« suggestions complémentaires »).
+- **Prudence sur les données** : les valeurs extrêmes ne sont traitées d'office que si ce sont des fautes de saisie évidentes (999, -1…) ; on n'invente jamais d'email ni d'identifiant.
+- **Reproductible** : export du fichier propre **et** d'un script Pandas qui refait exactement le même nettoyage.
 
-Pour arrêter : `Ctrl + C` dans le Terminal.
-
-## Activer le vrai LLM (Groq, gratuit)
-
-Sans clé, l'application tourne en **mode démo** : le plan est créé par des règles, sans IA.
-
-1. Créez une clé sur https://console.groq.com/keys
-2. Copiez le fichier `.env.example` et renommez la copie en `.env`
-3. Collez votre clé après `GROQ_API_KEY=`
-4. Relancez `streamlit run app.py`
-
-## Comment ça marche
+## 🔁 Fonctionnement
 
 ```
-profile → agent ⇄ tools → plan → human_review (pause) → execute
+profile → agent ⇄ tools → plan → garde-fou → ⏸ validation humaine → execute → rapport
 ```
 
 | Fichier | Rôle |
 |---|---|
-| `app.py` | Interface Streamlit, affichage des étapes en direct |
-| `agent/graph.py` | Graphe LangGraph : boucle de tool calling, pause `interrupt()` |
-| `agent/tools.py` | Chargement des fichiers + outils d'inspection (lecture seule) |
-| `agent/engine.py` | Moteur en **liste blanche** : le LLM ne génère aucun code |
-| `data/dirty_cafe_sales.csv` | Fichier de test volontairement sale |
+| `app.py` | Interface Streamlit, étapes de l'agent affichées en direct |
+| `agent/graph.py` | Graphe LangGraph : boucle de tool calling, plan structuré, pause `interrupt()` |
+| `agent/tools.py` | Chargement CSV/Excel (en-tête détecté) + outils d'inspection en lecture seule |
+| `agent/engine.py` | Moteur en liste blanche, règles, garde-fou, export du script |
+| `data/dirty_cafe_sales.csv` | Fichier de démo volontairement sale |
 
-**Sécurité :** le LLM choisit uniquement parmi 7 opérations prédéfinies (`drop_duplicates`, `strip_whitespace`, `normalize_case`, `convert_type`, `fill_missing`, `clip_outliers`, `drop_column`). Une action invalide est ignorée sans bloquer les autres.
+**Opérations autorisées :** `drop_total_rows`, `drop_duplicates` (lignes identiques ou même identifiant), `drop_column`, `strip_whitespace`, `normalize_case`, `convert_type`, `nullify_outliers`, `clip_outliers`, `fill_missing`.
 
-**Bonus :** l'application exporte un **script Pandas reproductible** du nettoyage appliqué.
+## 🚀 Lancer le projet
 
-## Stack
+```bash
+git clone https://github.com/<ton-compte>/data-cleaning-agent.git
+cd data-cleaning-agent
+pip install -r requirements.txt
+cp .env.example .env        # puis colle ta clé Groq (gratuite : https://console.groq.com/keys)
+streamlit run app.py
+```
 
-LangGraph · Groq · Python & Pandas · Streamlit
+Sans clé, l'application tourne en **mode démo** (plan généré par les règles, sans LLM).
+
+## 📊 Exemple (fichier de démo)
+
+| | Avant | Après |
+|---|---|---|
+| Lignes | 212 | 200 (12 doublons supprimés) |
+| Dates | 3 formats mélangés | un seul format |
+| Villes | `paris`, `LYON`, ` Lyon` | `Paris`, `Lyon` |
+| Quantité aberrante | `999` | médiane (3) |
+| Emails manquants | vides | laissés vides (aucune valeur inventée) |
+
+## ⚠️ Limites
+
+- Fonctionne sur des **tableaux** (une ligne = un enregistrement), pas sur des documents mis en page.
+- Un résumé des données (valeurs fréquentes, exemples) est envoyé au LLM : n'utilisez pas de données confidentielles.
