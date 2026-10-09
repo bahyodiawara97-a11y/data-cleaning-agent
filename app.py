@@ -16,6 +16,22 @@ from agent.tools import load_file, overview, prepare
 load_dotenv()
 st.set_page_config(page_title="AI Data Cleaning Agent", page_icon="🧹", layout="wide")
 
+# Streamlit déclare la page en anglais : Chrome la « traduit » alors en français (« fichier de démolition »…).
+# On indique que la page est déjà en français et qu'elle ne doit pas être traduite.
+NO_TRANSLATE_JS = """<script>
+const d = window.parent && window.parent.document && window.parent !== window ? window.parent.document : document;
+d.documentElement.lang = "fr";
+d.documentElement.setAttribute("translate", "no");
+if (!d.querySelector('meta[name="google"]')) {
+  const m = d.createElement("meta"); m.name = "google"; m.content = "notranslate"; d.head.appendChild(m);
+}
+</script>"""
+try:
+    st.html(NO_TRANSLATE_JS, unsafe_allow_javascript=True)
+except TypeError:  # anciennes versions de Streamlit
+    import streamlit.components.v1 as components
+    components.html(NO_TRANSLATE_JS, height=0)
+
 LABELS = {
     "profile": "🔍 Profilage du dataset",
     "agent": "🧠 Raisonnement de l'agent",
@@ -62,8 +78,9 @@ def metrics(df: pd.DataFrame, title: str):
 
 # ------------------------------------------------------------------ en-tête
 st.title("🧹 AI Data Cleaning Agent")
-APP_VERSION = "1.6"
+APP_VERSION = "1.7"
 st.caption(f"L'agent inspecte, propose un plan, et n'applique rien sans votre validation. · version {APP_VERSION}")
+st.caption("🔒 Démo publique : un résumé des données est envoyé au LLM (Groq). N'importez pas de données confidentielles.")
 
 llm = get_llm()
 if llm is None:

@@ -2,6 +2,10 @@
 
 Un agent IA qui inspecte un fichier **CSV ou Excel**, détecte les problèmes de qualité et propose un plan de nettoyage justifié. **Rien n'est appliqué sans validation humaine** (human-in-the-loop).
 
+**🚀 [Tester l'application en ligne](https://data-cleaning-agent-hyo.streamlit.app/)** (aucune installation)
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://data-cleaning-agent-hyo.streamlit.app/)
+
 > Stack : **LangGraph** · **LLM via Groq** · **Python & Pandas** · **Streamlit**
 
 ![Plan de nettoyage proposé par l'agent](demo.png)
